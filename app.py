@@ -10,11 +10,12 @@ import time
 st.set_page_config(page_title="Crack Prediction", layout="wide")
 
 st.markdown("""
-<h2>Data-Driven Prediction of Crack Formation in Ti-6242 Alloy</h2>
+<h3>Data-Driven Prediction of Crack Formation in Ti-6242 Alloy</h3>
 <p>Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.</p>
 """, unsafe_allow_html=True)
 
 st.divider()
+
 
 # -------------------------
 # MODEL (UNCHANGED)
@@ -102,7 +103,6 @@ class AttUNetGenerator(nn.Module):
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 @st.cache_resource
 def load_model():
 
@@ -121,7 +121,6 @@ def load_model():
 
 
 model=load_model()
-
 
 transform=transforms.Compose([
     transforms.Resize((512,512)),
@@ -144,7 +143,7 @@ if "prediction" not in st.session_state:
 
 
 # -------------------------
-# AUTO IMAGE DETECTION
+# IMAGE DETECTION
 # -------------------------
 
 IMAGE_FOLDER="test_images"
@@ -180,12 +179,14 @@ if st.session_state.page=="select":
                 st.session_state.page="loading"
                 st.rerun()
 
+    st.stop()
+
 
 # =========================
 # PAGE 2 : LOADING
 # =========================
 
-elif st.session_state.page=="loading":
+if st.session_state.page=="loading":
 
     progress=st.progress(0,text="Running AI Model...")
 
@@ -194,7 +195,6 @@ elif st.session_state.page=="loading":
         progress.progress(i+1,text=f"Running AI Model... {i+1}%")
 
     img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
-
     image=Image.open(img_path).convert("RGB")
 
     input_tensor=transform(image).unsqueeze(0).to(device)
@@ -210,12 +210,14 @@ elif st.session_state.page=="loading":
 
     st.rerun()
 
+    st.stop()
+
 
 # =========================
 # PAGE 3 : RESULT
 # =========================
 
-elif st.session_state.page=="result":
+if st.session_state.page=="result":
 
     st.subheader("AI Crack Prediction")
 
@@ -224,6 +226,7 @@ elif st.session_state.page=="result":
     st.divider()
 
     if st.button("← Back to samples"):
-
         st.session_state.page="select"
         st.rerun()
+
+    st.stop()
