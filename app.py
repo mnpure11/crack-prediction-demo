@@ -9,9 +9,9 @@ import time
 
 st.set_page_config(page_title="Crack Prediction", layout="wide")
 
-# ------------------------
-# Page Header
-# ------------------------
+# -------------------------
+# Header
+# -------------------------
 
 st.markdown(
 """
@@ -24,9 +24,9 @@ Select a Ti-6242 microstructure and let the AI predict where the crack will form
 st.divider()
 
 
-# ------------------------
-# Attention Block
-# ------------------------
+# -------------------------
+# Model (UNCHANGED)
+# -------------------------
 
 class AttentionBlock(nn.Module):
 
@@ -51,17 +51,13 @@ class AttentionBlock(nn.Module):
 
     def forward(self,g,x):
 
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
+        g1=self.W_g(g)
+        x1=self.W_x(x)
 
-        psi = self.psi(g1 + x1)
+        psi=self.psi(g1+x1)
 
-        return x * psi
+        return x*psi
 
-
-# ------------------------
-# Conv Block
-# ------------------------
 
 def conv_block(in_ch,out_ch,kernel=3,padding=1,use_dropout=False):
 
@@ -76,10 +72,6 @@ def conv_block(in_ch,out_ch,kernel=3,padding=1,use_dropout=False):
 
     return nn.Sequential(*layers)
 
-
-# ------------------------
-# Generator
-# ------------------------
 
 class AttUNetGenerator(nn.Module):
 
@@ -129,25 +121,11 @@ class AttUNetGenerator(nn.Module):
         return self.final(d2)
 
 
-# ------------------------
-# Device
-# ------------------------
-
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# ------------------------
-# Load Model
-# ------------------------
-
 @st.cache_resource
 def load_model():
-
-    progress=st.progress(0,text="Loading AI model...")
-
-    for i in range(100):
-        time.sleep(0.01)
-        progress.progress(i+1,text=f"Loading AI model... {i+1}%")
 
     model=AttUNetGenerator().to(device)
 
@@ -160,17 +138,11 @@ def load_model():
 
     model.eval()
 
-    progress.empty()
-
     return model
 
 
 model=load_model()
 
-
-# ------------------------
-# Transform
-# ------------------------
 
 transform=transforms.Compose([
     transforms.Resize((512,512)),
@@ -178,9 +150,20 @@ transform=transforms.Compose([
 ])
 
 
-# ------------------------
-# Image Selection
-# ------------------------
+# -------------------------
+# Session State
+# -------------------------
+
+if "page" not in st.session_state:
+    st.session_state.page="select"
+
+if "selected_image" not in st.session_state:
+    st.session_state.selected_image=None
+
+
+# -------------------------
+# Image List
+# -------------------------
 
 IMAGE_FOLDER="test_images"
 
@@ -190,70 +173,73 @@ image_files=sorted(
 )
 
 
-if "selected_image" not in st.session_state:
-    st.session_state.selected_image=None
+# =========================
+# PAGE 1 : IMAGE SELECTION
+# =========================
 
+if st.session_state.page=="select":
 
-st.subheader("Available Microstructures")
+    st.subheader("Available Microstructures")
 
+    cols=st.columns(len(image_files))
 
-cols=st.columns(len(image_files))
+    for i,img_file in enumerate(image_files):
 
-for i,img_file in enumerate(image_files):
-
-    img_path=os.path.join(IMAGE_FOLDER,img_file)
-    image=Image.open(img_path).convert("RGB")
-
-    with cols[i]:
-
-        st.image(image,use_column_width=True)
-
-        if st.button(f"Sample {i+1}",key=i):
-
-            st.session_state.selected_image=img_file
-
-            st.rerun()
-
-
-# ------------------------
-# Prediction Section
-# ------------------------
-
-st.divider()
-
-prediction_area=st.container()
-
-with prediction_area:
-
-    if st.session_state.selected_image:
-
-        st.subheader("AI Crack Prediction")
-
-        img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
-
+        img_path=os.path.join(IMAGE_FOLDER,img_file)
         image=Image.open(img_path).convert("RGB")
 
-        loading=st.progress(0,text="Running AI model...")
+        with cols[i]:
 
-        for i in range(100):
-            time.sleep(0.005)
-            loading.progress(i+1,text=f"Running AI model... {i+1}%")
+            st.image(image,use_column_width=True)
 
-        input_tensor=transform(image).unsqueeze(0).to(device)
+            if st.button(f"Sample {i+1}",key=i):
 
-        with torch.no_grad():
-            output=model(input_tensor)
+                st.session_state.selected_image=img_file
+                st.session_state.page="predict"
+                st.rerun()
 
-        output_img=(
-            output.squeeze()
-            .permute(1,2,0)
-            .cpu()
-            .numpy()
-        )
 
-        output_img=(output_img+1)/2
-        output_img=np.clip(output_img,0,1)
+# =========================
+# PAGE 2 : PREDICTION VIEW
+# =========================
 
-        loading.empty()
+elif st.session_state.page=="predict":
 
-        st.image(output_img,use_column_width=True)
+    st.subheader("AI Crack Prediction")
+
+    img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
+
+    image=Image.open(img_path).convert("RGB")
+
+    # Full screen loading transition
+    progress=st.progress(0,text="Running AI Model...")
+
+    for i in range(100):
+        time.sleep(0.01)
+        progress.progress(i+1,text=f"Running AI Model... {i+1}%")
+
+    input_tensor=transform(image).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        output=model(input_tensor)
+
+    output_img=(
+        output.squeeze()
+        .permute(1,2,0)
+        .cpu()
+        .numpy()
+    )
+
+    output_img=(output_img+1)/2
+    output_img=np.clip(output_img,0,1)
+
+    progress.empty()
+
+    st.image(output_img,use_column_width=True)
+
+    st.divider()
+
+    if st.button("← Back to samples"):
+
+        st.session_state.page="select"
+        st.rerun()
