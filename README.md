@@ -1,0 +1,2 @@
+# BTP
+For partial deployment
