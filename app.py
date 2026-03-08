@@ -9,72 +9,37 @@ import time
 
 st.set_page_config(page_title="Crack Prediction", layout="wide")
 
-# -------------------------
-# Smaller Title
-# -------------------------
-
-st.markdown(
-"""
-<h2 style="margin-bottom:0;">
-Data-Driven Prediction of Crack Formation in Ti-6242 Alloy
-</h2>
-
-<p style="font-size:16px;">
-Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.
-</p>
-""",
-unsafe_allow_html=True
-)
+st.markdown("""
+<h2>Data-Driven Prediction of Crack Formation in Ti-6242 Alloy</h2>
+<p>Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.</p>
+""", unsafe_allow_html=True)
 
 st.divider()
 
-
 # -------------------------
-# Model (UNCHANGED)
+# MODEL (UNCHANGED)
 # -------------------------
 
 class AttentionBlock(nn.Module):
-
     def __init__(self,F_g,F_l,F_int):
         super().__init__()
-
-        self.W_g = nn.Sequential(
-            nn.Conv2d(F_g,F_int,1),
-            nn.InstanceNorm2d(F_int)
-        )
-
-        self.W_x = nn.Sequential(
-            nn.Conv2d(F_l,F_int,1),
-            nn.InstanceNorm2d(F_int)
-        )
-
-        self.psi = nn.Sequential(
-            nn.ReLU(inplace=True),
-            nn.Conv2d(F_int,1,1),
-            nn.Sigmoid()
-        )
+        self.W_g = nn.Sequential(nn.Conv2d(F_g,F_int,1), nn.InstanceNorm2d(F_int))
+        self.W_x = nn.Sequential(nn.Conv2d(F_l,F_int,1), nn.InstanceNorm2d(F_int))
+        self.psi = nn.Sequential(nn.ReLU(inplace=True), nn.Conv2d(F_int,1,1), nn.Sigmoid())
 
     def forward(self,g,x):
-
         g1=self.W_g(g)
         x1=self.W_x(x)
-
         psi=self.psi(g1+x1)
-
         return x*psi
 
 
 def conv_block(in_ch,out_ch,kernel=3,padding=1,use_dropout=False):
-
-    layers=[
-        nn.Conv2d(in_ch,out_ch,kernel,padding=padding,bias=False),
-        nn.InstanceNorm2d(out_ch),
-        nn.ReLU(inplace=True)
-    ]
-
+    layers=[nn.Conv2d(in_ch,out_ch,kernel,padding=padding,bias=False),
+            nn.InstanceNorm2d(out_ch),
+            nn.ReLU(inplace=True)]
     if use_dropout:
         layers.append(nn.Dropout(0.2))
-
     return nn.Sequential(*layers)
 
 
@@ -100,10 +65,7 @@ class AttUNetGenerator(nn.Module):
         self.att2=AttentionBlock(base_ch,base_ch,base_ch//2)
         self.dec2=conv_block(base_ch*2,base_ch,use_dropout=True)
 
-        self.final=nn.Sequential(
-            nn.Conv2d(base_ch,out_channels,7,padding=3),
-            nn.Tanh()
-        )
+        self.final=nn.Sequential(nn.Conv2d(base_ch,out_channels,7,padding=3), nn.Tanh())
 
         self.pool=nn.AvgPool2d(2)
 
@@ -128,35 +90,26 @@ class AttUNetGenerator(nn.Module):
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 @st.cache_resource
 def load_model():
-
     model=AttUNetGenerator().to(device)
-
     checkpoint=torch.load("model/G_A2B_final.pth",map_location=device)
-
     if isinstance(checkpoint,dict) and "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
     else:
         model.load_state_dict(checkpoint)
-
     model.eval()
-
     return model
 
-
 model=load_model()
-
 
 transform=transforms.Compose([
     transforms.Resize((512,512)),
     transforms.ToTensor()
 ])
 
-
 # -------------------------
-# Session State
+# SESSION STATE
 # -------------------------
 
 if "page" not in st.session_state:
@@ -165,24 +118,22 @@ if "page" not in st.session_state:
 if "selected_image" not in st.session_state:
     st.session_state.selected_image=None
 
-if "prediction_ready" not in st.session_state:
-    st.session_state.prediction_ready=False
-
+if "prediction" not in st.session_state:
+    st.session_state.prediction=None
 
 # -------------------------
-# Image List
+# AUTO IMAGE DETECTION
 # -------------------------
 
 IMAGE_FOLDER="test_images"
 
 image_files=sorted(
-    [f for f in os.listdir(IMAGE_FOLDER) if f.endswith(".png")],
-    key=lambda x:int(os.path.splitext(x)[0])
+    [f for f in os.listdir(IMAGE_FOLDER) if f.lower().endswith((".png",".jpg",".jpeg"))],
+    key=lambda x: int(os.path.splitext(x)[0])
 )
 
-
 # =========================
-# PAGE 1 : SELECT IMAGE
+# PAGE 1 : SELECT
 # =========================
 
 if st.session_state.page=="select":
@@ -203,10 +154,9 @@ if st.session_state.page=="select":
             if st.button(f"Sample {i+1}",key=i):
 
                 st.session_state.selected_image=img_file
+                st.session_state.prediction=None   # reset
                 st.session_state.page="predict"
-                st.session_state.prediction_ready=False
                 st.rerun()
-
 
 # =========================
 # PAGE 2 : PREDICTION
@@ -215,10 +165,9 @@ if st.session_state.page=="select":
 elif st.session_state.page=="predict":
 
     img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
-
     image=Image.open(img_path).convert("RGB")
 
-    if not st.session_state.prediction_ready:
+    if st.session_state.prediction is None:
 
         progress=st.progress(0,text="Running AI Model...")
 
@@ -231,32 +180,19 @@ elif st.session_state.page=="predict":
         with torch.no_grad():
             output=model(input_tensor)
 
-        output_img=(
-            output.squeeze()
-            .permute(1,2,0)
-            .cpu()
-            .numpy()
-        )
-
-        output_img=(output_img+1)/2
+        output_img=(output.squeeze().permute(1,2,0).cpu().numpy()+1)/2
         output_img=np.clip(output_img,0,1)
 
         st.session_state.prediction=output_img
-        st.session_state.prediction_ready=True
 
         progress.empty()
 
     st.subheader("AI Crack Prediction")
 
-    st.image(
-        st.session_state.prediction,
-        width=700
-    )
+    st.image(st.session_state.prediction,width=700)
 
     st.divider()
 
     if st.button("← Back to samples"):
-
         st.session_state.page="select"
-        st.session_state.prediction_ready=False
         st.rerun()
