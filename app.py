@@ -7,33 +7,49 @@ from PIL import Image
 import os
 import time
 
-st.set_page_config(page_title="Microstructure Crack Prediction", layout="wide")
+st.set_page_config(page_title="Crack Prediction", layout="wide")
+
+# ------------------------
+# Page Header
+# ------------------------
+
+st.markdown(
+"""
+# Data-Driven Prediction of Crack Formation in Ti-6242 Alloy
+
+Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.
+"""
+)
+
+st.divider()
+
 
 # ------------------------
 # Attention Block
 # ------------------------
 
 class AttentionBlock(nn.Module):
+
     def __init__(self, F_g, F_l, F_int):
         super().__init__()
 
         self.W_g = nn.Sequential(
-            nn.Conv2d(F_g, F_int, 1, 1, 0, bias=True),
+            nn.Conv2d(F_g, F_int, 1),
             nn.InstanceNorm2d(F_int)
         )
 
         self.W_x = nn.Sequential(
-            nn.Conv2d(F_l, F_int, 1, 1, 0, bias=True),
+            nn.Conv2d(F_l, F_int, 1),
             nn.InstanceNorm2d(F_int)
         )
 
         self.psi = nn.Sequential(
             nn.ReLU(inplace=True),
-            nn.Conv2d(F_int,1,1,1,0,bias=True),
+            nn.Conv2d(F_int,1,1),
             nn.Sigmoid()
         )
 
-    def forward(self, g, x):
+    def forward(self,g,x):
 
         g1 = self.W_g(g)
         x1 = self.W_x(x)
@@ -47,10 +63,10 @@ class AttentionBlock(nn.Module):
 # Conv Block
 # ------------------------
 
-def conv_block(in_ch, out_ch, kernel=3, padding=1, use_dropout=False):
+def conv_block(in_ch,out_ch,kernel=3,padding=1,use_dropout=False):
 
-    layers = [
-        nn.Conv2d(in_ch, out_ch, kernel, padding=padding, bias=False),
+    layers=[
+        nn.Conv2d(in_ch,out_ch,kernel,padding=padding,bias=False),
         nn.InstanceNorm2d(out_ch),
         nn.ReLU(inplace=True)
     ]
@@ -67,48 +83,48 @@ def conv_block(in_ch, out_ch, kernel=3, padding=1, use_dropout=False):
 
 class AttUNetGenerator(nn.Module):
 
-    def __init__(self, in_channels=3, out_channels=3, base_ch=32):
+    def __init__(self,in_channels=3,out_channels=3,base_ch=32):
         super().__init__()
 
-        self.enc1 = conv_block(in_channels, base_ch)
-        self.enc2 = conv_block(base_ch, base_ch*2)
-        self.enc3 = conv_block(base_ch*2, base_ch*4)
+        self.enc1=conv_block(in_channels,base_ch)
+        self.enc2=conv_block(base_ch,base_ch*2)
+        self.enc3=conv_block(base_ch*2,base_ch*4)
 
-        self.res_blocks = nn.Sequential(
-            conv_block(base_ch*4, base_ch*4, use_dropout=True),
-            conv_block(base_ch*4, base_ch*4, use_dropout=True)
+        self.res_blocks=nn.Sequential(
+            conv_block(base_ch*4,base_ch*4,use_dropout=True),
+            conv_block(base_ch*4,base_ch*4,use_dropout=True)
         )
 
-        self.up3 = nn.ConvTranspose2d(base_ch*4, base_ch*2, 3, 2, 1, output_padding=1)
-        self.att3 = AttentionBlock(base_ch*2, base_ch*2, base_ch)
-        self.dec3 = conv_block(base_ch*4, base_ch*2, use_dropout=True)
+        self.up3=nn.ConvTranspose2d(base_ch*4,base_ch*2,3,2,1,output_padding=1)
+        self.att3=AttentionBlock(base_ch*2,base_ch*2,base_ch)
+        self.dec3=conv_block(base_ch*4,base_ch*2,use_dropout=True)
 
-        self.up2 = nn.ConvTranspose2d(base_ch*2, base_ch, 3, 2, 1, output_padding=1)
-        self.att2 = AttentionBlock(base_ch, base_ch, base_ch//2)
-        self.dec2 = conv_block(base_ch*2, base_ch, use_dropout=True)
+        self.up2=nn.ConvTranspose2d(base_ch*2,base_ch,3,2,1,output_padding=1)
+        self.att2=AttentionBlock(base_ch,base_ch,base_ch//2)
+        self.dec2=conv_block(base_ch*2,base_ch,use_dropout=True)
 
-        self.final = nn.Sequential(
-            nn.Conv2d(base_ch, out_channels, 7, padding=3),
+        self.final=nn.Sequential(
+            nn.Conv2d(base_ch,out_channels,7,padding=3),
             nn.Tanh()
         )
 
-        self.pool = nn.AvgPool2d(2)
+        self.pool=nn.AvgPool2d(2)
 
-    def forward(self, x):
+    def forward(self,x):
 
-        e1 = self.enc1(x)
-        e2 = self.enc2(self.pool(e1))
-        e3 = self.enc3(self.pool(e2))
+        e1=self.enc1(x)
+        e2=self.enc2(self.pool(e1))
+        e3=self.enc3(self.pool(e2))
 
-        b = self.res_blocks(e3)
+        b=self.res_blocks(e3)
 
-        u3 = self.up3(b)
-        a3 = self.att3(u3, e2)
-        d3 = self.dec3(torch.cat([u3, a3],1))
+        u3=self.up3(b)
+        a3=self.att3(u3,e2)
+        d3=self.dec3(torch.cat([u3,a3],1))
 
-        u2 = self.up2(d3)
-        a2 = self.att2(u2, e1)
-        d2 = self.dec2(torch.cat([u2, a2],1))
+        u2=self.up2(d3)
+        a2=self.att2(u2,e1)
+        d2=self.dec2(torch.cat([u2,a2],1))
 
         return self.final(d2)
 
@@ -117,7 +133,7 @@ class AttUNetGenerator(nn.Module):
 # Device
 # ------------------------
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ------------------------
@@ -127,17 +143,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @st.cache_resource
 def load_model():
 
-    progress = st.progress(0)
+    progress=st.progress(0,text="Loading AI model...")
 
     for i in range(100):
         time.sleep(0.01)
-        progress.progress(i + 1)
+        progress.progress(i+1,text=f"Loading AI model... {i+1}%")
 
-    model = AttUNetGenerator().to(device)
+    model=AttUNetGenerator().to(device)
 
-    checkpoint = torch.load("model/G_A2B_final.pth", map_location=device)
+    checkpoint=torch.load("model/G_A2B_final.pth",map_location=device)
 
-    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+    if isinstance(checkpoint,dict) and "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
     else:
         model.load_state_dict(checkpoint)
@@ -149,87 +165,95 @@ def load_model():
     return model
 
 
-model = load_model()
+model=load_model()
 
 
 # ------------------------
 # Transform
 # ------------------------
 
-transform = transforms.Compose([
+transform=transforms.Compose([
     transforms.Resize((512,512)),
     transforms.ToTensor()
 ])
 
 
 # ------------------------
-# UI
+# Image Selection
 # ------------------------
 
-st.title("Microstructure Crack Prediction")
+IMAGE_FOLDER="test_images"
 
-st.write("Select a sample microstructure image to run the trained model.")
-
-IMAGE_FOLDER = "test_images"
-
-image_files = sorted(
+image_files=sorted(
     [f for f in os.listdir(IMAGE_FOLDER) if f.endswith(".png")],
-    key=lambda x: int(os.path.splitext(x)[0])
+    key=lambda x:int(os.path.splitext(x)[0])
 )
 
+
 if "selected_image" not in st.session_state:
-    st.session_state.selected_image = None
+    st.session_state.selected_image=None
 
 
-# ------------------------
-# Thumbnail Selection
-# ------------------------
+st.subheader("Available Microstructures")
 
-cols = st.columns(len(image_files))
 
-for i, img_file in enumerate(image_files):
+cols=st.columns(len(image_files))
 
-    img_path = os.path.join(IMAGE_FOLDER, img_file)
-    image = Image.open(img_path).convert("RGB")
+for i,img_file in enumerate(image_files):
+
+    img_path=os.path.join(IMAGE_FOLDER,img_file)
+    image=Image.open(img_path).convert("RGB")
 
     with cols[i]:
 
-        st.image(image, use_column_width=True)
+        st.image(image,use_column_width=True)
 
-        if st.button(f"Sample {i+1}", key=i):
-            st.session_state.selected_image = img_file
+        if st.button(f"Sample {i+1}",key=i):
+
+            st.session_state.selected_image=img_file
+
+            st.rerun()
 
 
 # ------------------------
-# Run Model
+# Prediction Section
 # ------------------------
 
-if st.session_state.selected_image:
+st.divider()
 
-    image_path = os.path.join(IMAGE_FOLDER, st.session_state.selected_image)
+prediction_area=st.container()
 
-    image = Image.open(image_path).convert("RGB")
+with prediction_area:
 
-    with st.spinner("Running crack prediction..."):
+    if st.session_state.selected_image:
 
-        input_tensor = transform(image).unsqueeze(0).to(device)
+        st.subheader("AI Crack Prediction")
+
+        img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
+
+        image=Image.open(img_path).convert("RGB")
+
+        loading=st.progress(0,text="Running AI model...")
+
+        for i in range(100):
+            time.sleep(0.005)
+            loading.progress(i+1,text=f"Running AI model... {i+1}%")
+
+        input_tensor=transform(image).unsqueeze(0).to(device)
 
         with torch.no_grad():
-            output = model(input_tensor)
+            output=model(input_tensor)
 
-        output_img = (
+        output_img=(
             output.squeeze()
             .permute(1,2,0)
             .cpu()
             .numpy()
         )
 
-        output_img = (output_img + 1) / 2
-        output_img = np.clip(output_img,0,1)
+        output_img=(output_img+1)/2
+        output_img=np.clip(output_img,0,1)
 
+        loading.empty()
 
-    st.divider()
-
-    st.subheader("Prediction Result")
-
-    st.image(output_img, use_column_width=True)
+        st.image(output_img,use_column_width=True)
