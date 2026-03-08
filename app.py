@@ -5,6 +5,7 @@ import numpy as np
 from torchvision import transforms
 from PIL import Image
 import os
+import time
 
 st.set_page_config(page_title="Microstructure Crack Prediction", layout="wide")
 
@@ -43,7 +44,7 @@ class AttentionBlock(nn.Module):
 
 
 # ------------------------
-# Convolution Block
+# Conv Block
 # ------------------------
 
 def conv_block(in_ch, out_ch, kernel=3, padding=1, use_dropout=False):
@@ -96,23 +97,17 @@ class AttUNetGenerator(nn.Module):
     def forward(self, x):
 
         e1 = self.enc1(x)
-
         e2 = self.enc2(self.pool(e1))
-
         e3 = self.enc3(self.pool(e2))
 
         b = self.res_blocks(e3)
 
         u3 = self.up3(b)
-
         a3 = self.att3(u3, e2)
-
         d3 = self.dec3(torch.cat([u3, a3],1))
 
         u2 = self.up2(d3)
-
         a2 = self.att2(u2, e1)
-
         d2 = self.dec2(torch.cat([u2, a2],1))
 
         return self.final(d2)
@@ -132,6 +127,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @st.cache_resource
 def load_model():
 
+    progress = st.progress(0)
+
+    for i in range(100):
+        time.sleep(0.01)
+        progress.progress(i + 1)
+
     model = AttUNetGenerator().to(device)
 
     checkpoint = torch.load("model/G_A2B_final.pth", map_location=device)
@@ -142,6 +143,8 @@ def load_model():
         model.load_state_dict(checkpoint)
 
     model.eval()
+
+    progress.empty()
 
     return model
 
@@ -165,6 +168,8 @@ transform = transforms.Compose([
 
 st.title("Microstructure Crack Prediction")
 
+st.write("Select a sample microstructure image to run the trained model.")
+
 IMAGE_FOLDER = "test_images"
 
 image_files = sorted(
@@ -172,30 +177,40 @@ image_files = sorted(
     key=lambda x: int(os.path.splitext(x)[0])
 )
 
-selected_image = st.selectbox(
-    "Select Test Image",
-    image_files
-)
-
-image_path = os.path.join(IMAGE_FOLDER, selected_image)
-
-image = Image.open(image_path).convert("RGB")
-
-col1, col2 = st.columns(2)
-
-with col1:
-
-    st.subheader("Input Microstructure")
-
-    st.image(image)
+if "selected_image" not in st.session_state:
+    st.session_state.selected_image = None
 
 
-predict_button = st.button("Run Model")
+# ------------------------
+# Thumbnail Selection
+# ------------------------
+
+cols = st.columns(len(image_files))
+
+for i, img_file in enumerate(image_files):
+
+    img_path = os.path.join(IMAGE_FOLDER, img_file)
+    image = Image.open(img_path).convert("RGB")
+
+    with cols[i]:
+
+        st.image(image, use_column_width=True)
+
+        if st.button(f"Sample {i+1}", key=i):
+            st.session_state.selected_image = img_file
 
 
-if predict_button:
+# ------------------------
+# Run Model
+# ------------------------
 
-    with st.spinner("Running inference..."):
+if st.session_state.selected_image:
+
+    image_path = os.path.join(IMAGE_FOLDER, st.session_state.selected_image)
+
+    image = Image.open(image_path).convert("RGB")
+
+    with st.spinner("Running crack prediction..."):
 
         input_tensor = transform(image).unsqueeze(0).to(device)
 
@@ -212,12 +227,9 @@ if predict_button:
         output_img = (output_img + 1) / 2
         output_img = np.clip(output_img,0,1)
 
-    with col2:
 
-        st.subheader("Predicted Crack")
+    st.divider()
 
-        st.image(output_img)
+    st.subheader("Prediction Result")
 
-
-if st.button("Reset"):
-    st.rerun()
+    st.image(output_img, use_column_width=True)
