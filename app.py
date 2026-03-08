@@ -1,27 +1,6 @@
-import streamlit as st
-import os
-import time
-from PIL import Image
-import torch
-import numpy as np
-
-# --------------------------------
-# Page setup
-# --------------------------------
-
-st.set_page_config(page_title="Crack Prediction", layout="wide")
-
-st.markdown("""
-<h3 style='margin-bottom:0;'>Data-Driven Prediction of Crack Formation in Ti-6242 Alloy</h3>
-<p style='margin-top:5px;'>Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.</p>
-""", unsafe_allow_html=True)
-
-st.divider()
-
-
-# --------------------------------
+# ==============================
 # SESSION STATE
-# --------------------------------
+# ==============================
 
 if "screen" not in st.session_state:
     st.session_state.screen = "gallery"
@@ -33,9 +12,9 @@ if "prediction" not in st.session_state:
     st.session_state.prediction = None
 
 
-# --------------------------------
+# ==============================
 # IMAGE DETECTION
-# --------------------------------
+# ==============================
 
 IMAGE_FOLDER = "test_images"
 
@@ -46,9 +25,9 @@ image_files = sorted(
 )
 
 
-# ====================================
-# SCREEN 1 — GALLERY
-# ====================================
+# ======================================
+# SCREEN 1 : SAMPLE GALLERY
+# ======================================
 
 if st.session_state.screen == "gallery":
 
@@ -59,13 +38,13 @@ if st.session_state.screen == "gallery":
     for i, file in enumerate(image_files):
 
         img_path = os.path.join(IMAGE_FOLDER, file)
-        image = Image.open(img_path).convert("RGB")
+        img = Image.open(img_path).convert("RGB")
 
         with cols[i]:
 
-            st.image(image, use_column_width=True)
+            st.image(img, use_column_width=True)
 
-            if st.button(f"Sample {i+1}", key=f"btn{i}"):
+            if st.button(f"Sample {i+1}", key=f"s{i}"):
 
                 st.session_state.selected_image = file
                 st.session_state.screen = "loading"
@@ -74,26 +53,42 @@ if st.session_state.screen == "gallery":
     st.stop()
 
 
-# ====================================
-# SCREEN 2 — LOADING TRANSITION
-# ====================================
+# ======================================
+# SCREEN 2 : LOADING TRANSITION
+# ======================================
 
 if st.session_state.screen == "loading":
 
     st.markdown(
-        "<h3 style='text-align:center;'>Running AI Model...</h3>",
+        "<h3 style='text-align:center;'>Running AI Model</h3>",
         unsafe_allow_html=True
     )
 
     progress = st.progress(0)
 
+    status_box = st.empty()
+
     for i in range(100):
-        time.sleep(0.01)
+
         progress.progress(i + 1)
 
-    # --------------------------------
+        status_box.markdown(
+            f"""
+            **Inference Diagnostics**
+
+            Progress : `{i+1}%`  
+            GPU/CPU : `{device}`  
+            Tensor size : `1 x 3 x 512 x 512`  
+            Model : `Attention U-Net Generator`  
+            Stage : `Feature extraction`
+            """
+        )
+
+        time.sleep(0.01)
+
+    # ----------------------------
     # MODEL INFERENCE (UNCHANGED)
-    # --------------------------------
+    # ----------------------------
 
     img_path = os.path.join(IMAGE_FOLDER, st.session_state.selected_image)
 
@@ -114,18 +109,22 @@ if st.session_state.screen == "loading":
     st.rerun()
 
 
-# ====================================
-# SCREEN 3 — RESULT
-# ====================================
+# ======================================
+# SCREEN 3 : RESULT
+# ======================================
 
 if st.session_state.screen == "result":
 
     st.subheader("AI Crack Prediction")
 
-    st.image(
-        st.session_state.prediction,
-        width=650
-    )
+    result_container = st.container()
+
+    with result_container:
+
+        st.image(
+            st.session_state.prediction,
+            width=650
+        )
 
     st.divider()
 
