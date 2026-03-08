@@ -10,15 +10,20 @@ import time
 st.set_page_config(page_title="Crack Prediction", layout="wide")
 
 # -------------------------
-# Header
+# Smaller Title
 # -------------------------
 
 st.markdown(
 """
-# Data-Driven Prediction of Crack Formation in Ti-6242 Alloy
+<h2 style="margin-bottom:0;">
+Data-Driven Prediction of Crack Formation in Ti-6242 Alloy
+</h2>
 
+<p style="font-size:16px;">
 Select a Ti-6242 microstructure and let the AI predict where the crack will form during dwell fatigue.
-"""
+</p>
+""",
+unsafe_allow_html=True
 )
 
 st.divider()
@@ -30,16 +35,16 @@ st.divider()
 
 class AttentionBlock(nn.Module):
 
-    def __init__(self, F_g, F_l, F_int):
+    def __init__(self,F_g,F_l,F_int):
         super().__init__()
 
         self.W_g = nn.Sequential(
-            nn.Conv2d(F_g, F_int, 1),
+            nn.Conv2d(F_g,F_int,1),
             nn.InstanceNorm2d(F_int)
         )
 
         self.W_x = nn.Sequential(
-            nn.Conv2d(F_l, F_int, 1),
+            nn.Conv2d(F_l,F_int,1),
             nn.InstanceNorm2d(F_int)
         )
 
@@ -160,6 +165,9 @@ if "page" not in st.session_state:
 if "selected_image" not in st.session_state:
     st.session_state.selected_image=None
 
+if "prediction_ready" not in st.session_state:
+    st.session_state.prediction_ready=False
+
 
 # -------------------------
 # Image List
@@ -174,7 +182,7 @@ image_files=sorted(
 
 
 # =========================
-# PAGE 1 : IMAGE SELECTION
+# PAGE 1 : SELECT IMAGE
 # =========================
 
 if st.session_state.page=="select":
@@ -196,50 +204,59 @@ if st.session_state.page=="select":
 
                 st.session_state.selected_image=img_file
                 st.session_state.page="predict"
+                st.session_state.prediction_ready=False
                 st.rerun()
 
 
 # =========================
-# PAGE 2 : PREDICTION VIEW
+# PAGE 2 : PREDICTION
 # =========================
 
 elif st.session_state.page=="predict":
-
-    st.subheader("AI Crack Prediction")
 
     img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
 
     image=Image.open(img_path).convert("RGB")
 
-    # Full screen loading transition
-    progress=st.progress(0,text="Running AI Model...")
+    if not st.session_state.prediction_ready:
 
-    for i in range(100):
-        time.sleep(0.01)
-        progress.progress(i+1,text=f"Running AI Model... {i+1}%")
+        progress=st.progress(0,text="Running AI Model...")
 
-    input_tensor=transform(image).unsqueeze(0).to(device)
+        for i in range(100):
+            time.sleep(0.01)
+            progress.progress(i+1,text=f"Running AI Model... {i+1}%")
 
-    with torch.no_grad():
-        output=model(input_tensor)
+        input_tensor=transform(image).unsqueeze(0).to(device)
 
-    output_img=(
-        output.squeeze()
-        .permute(1,2,0)
-        .cpu()
-        .numpy()
+        with torch.no_grad():
+            output=model(input_tensor)
+
+        output_img=(
+            output.squeeze()
+            .permute(1,2,0)
+            .cpu()
+            .numpy()
+        )
+
+        output_img=(output_img+1)/2
+        output_img=np.clip(output_img,0,1)
+
+        st.session_state.prediction=output_img
+        st.session_state.prediction_ready=True
+
+        progress.empty()
+
+    st.subheader("AI Crack Prediction")
+
+    st.image(
+        st.session_state.prediction,
+        width=700
     )
-
-    output_img=(output_img+1)/2
-    output_img=np.clip(output_img,0,1)
-
-    progress.empty()
-
-    st.image(output_img,use_column_width=True)
 
     st.divider()
 
     if st.button("← Back to samples"):
 
         st.session_state.page="select"
+        st.session_state.prediction_ready=False
         st.rerun()
