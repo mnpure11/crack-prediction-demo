@@ -21,25 +21,34 @@ st.divider()
 # -------------------------
 
 class AttentionBlock(nn.Module):
+
     def __init__(self,F_g,F_l,F_int):
         super().__init__()
+
         self.W_g = nn.Sequential(nn.Conv2d(F_g,F_int,1), nn.InstanceNorm2d(F_int))
         self.W_x = nn.Sequential(nn.Conv2d(F_l,F_int,1), nn.InstanceNorm2d(F_int))
         self.psi = nn.Sequential(nn.ReLU(inplace=True), nn.Conv2d(F_int,1,1), nn.Sigmoid())
 
     def forward(self,g,x):
+
         g1=self.W_g(g)
         x1=self.W_x(x)
         psi=self.psi(g1+x1)
+
         return x*psi
 
 
 def conv_block(in_ch,out_ch,kernel=3,padding=1,use_dropout=False):
-    layers=[nn.Conv2d(in_ch,out_ch,kernel,padding=padding,bias=False),
-            nn.InstanceNorm2d(out_ch),
-            nn.ReLU(inplace=True)]
+
+    layers=[
+        nn.Conv2d(in_ch,out_ch,kernel,padding=padding,bias=False),
+        nn.InstanceNorm2d(out_ch),
+        nn.ReLU(inplace=True)
+    ]
+
     if use_dropout:
         layers.append(nn.Dropout(0.2))
+
     return nn.Sequential(*layers)
 
 
@@ -65,7 +74,10 @@ class AttUNetGenerator(nn.Module):
         self.att2=AttentionBlock(base_ch,base_ch,base_ch//2)
         self.dec2=conv_block(base_ch*2,base_ch,use_dropout=True)
 
-        self.final=nn.Sequential(nn.Conv2d(base_ch,out_channels,7,padding=3), nn.Tanh())
+        self.final=nn.Sequential(
+            nn.Conv2d(base_ch,out_channels,7,padding=3),
+            nn.Tanh()
+        )
 
         self.pool=nn.AvgPool2d(2)
 
@@ -90,23 +102,32 @@ class AttUNetGenerator(nn.Module):
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 @st.cache_resource
 def load_model():
+
     model=AttUNetGenerator().to(device)
+
     checkpoint=torch.load("model/G_A2B_final.pth",map_location=device)
+
     if isinstance(checkpoint,dict) and "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
     else:
         model.load_state_dict(checkpoint)
+
     model.eval()
+
     return model
 
+
 model=load_model()
+
 
 transform=transforms.Compose([
     transforms.Resize((512,512)),
     transforms.ToTensor()
 ])
+
 
 # -------------------------
 # SESSION STATE
@@ -121,6 +142,7 @@ if "selected_image" not in st.session_state:
 if "prediction" not in st.session_state:
     st.session_state.prediction=None
 
+
 # -------------------------
 # AUTO IMAGE DETECTION
 # -------------------------
@@ -129,8 +151,9 @@ IMAGE_FOLDER="test_images"
 
 image_files=sorted(
     [f for f in os.listdir(IMAGE_FOLDER) if f.lower().endswith((".png",".jpg",".jpeg"))],
-    key=lambda x: int(os.path.splitext(x)[0])
+    key=lambda x:int(os.path.splitext(x)[0])
 )
+
 
 # =========================
 # PAGE 1 : SELECT
@@ -154,38 +177,45 @@ if st.session_state.page=="select":
             if st.button(f"Sample {i+1}",key=i):
 
                 st.session_state.selected_image=img_file
-                st.session_state.prediction=None   # reset
-                st.session_state.page="predict"
+                st.session_state.page="loading"
                 st.rerun()
 
+
 # =========================
-# PAGE 2 : PREDICTION
+# PAGE 2 : LOADING
 # =========================
 
-elif st.session_state.page=="predict":
+elif st.session_state.page=="loading":
+
+    progress=st.progress(0,text="Running AI Model...")
+
+    for i in range(100):
+        time.sleep(0.01)
+        progress.progress(i+1,text=f"Running AI Model... {i+1}%")
 
     img_path=os.path.join(IMAGE_FOLDER,st.session_state.selected_image)
+
     image=Image.open(img_path).convert("RGB")
 
-    if st.session_state.prediction is None:
+    input_tensor=transform(image).unsqueeze(0).to(device)
 
-        progress=st.progress(0,text="Running AI Model...")
+    with torch.no_grad():
+        output=model(input_tensor)
 
-        for i in range(100):
-            time.sleep(0.01)
-            progress.progress(i+1,text=f"Running AI Model... {i+1}%")
+    output_img=(output.squeeze().permute(1,2,0).cpu().numpy()+1)/2
+    output_img=np.clip(output_img,0,1)
 
-        input_tensor=transform(image).unsqueeze(0).to(device)
+    st.session_state.prediction=output_img
+    st.session_state.page="result"
 
-        with torch.no_grad():
-            output=model(input_tensor)
+    st.rerun()
 
-        output_img=(output.squeeze().permute(1,2,0).cpu().numpy()+1)/2
-        output_img=np.clip(output_img,0,1)
 
-        st.session_state.prediction=output_img
+# =========================
+# PAGE 3 : RESULT
+# =========================
 
-        progress.empty()
+elif st.session_state.page=="result":
 
     st.subheader("AI Crack Prediction")
 
@@ -194,5 +224,6 @@ elif st.session_state.page=="predict":
     st.divider()
 
     if st.button("← Back to samples"):
+
         st.session_state.page="select"
         st.rerun()
